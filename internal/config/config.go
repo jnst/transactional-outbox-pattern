@@ -15,6 +15,7 @@ type Config struct {
 	PublisherPollInterval time.Duration `env:"PUBLISHER_POLL_INTERVAL" envDefault:"5s"`
 	PublisherBatchSize    int           `env:"PUBLISHER_BATCH_SIZE"    envDefault:"10"`
 	ConsumerName          string        `env:"CONSUMER_NAME"           envDefault:"consumer-1"`
+	LogLevel              string        `env:"LOG_LEVEL"               envDefault:"info"`
 }
 
 // LoadConfig parses environment variables into Config struct.

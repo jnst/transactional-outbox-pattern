@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,12 +13,14 @@ import (
 	"github.com/redis/rueidis"
 
 	"github.com/jnst/transactional-outbox-pattern/internal/config"
+	"github.com/jnst/transactional-outbox-pattern/internal/logger"
 	"github.com/jnst/transactional-outbox-pattern/internal/repository"
 	"github.com/jnst/transactional-outbox-pattern/internal/service"
 )
 
 const (
 	signalBufferSize = 1
+	exitCode         = 1
 )
 
 func setupDatabase(cfg *config.Config) (*pgxpool.Pool, error) {
@@ -49,7 +51,7 @@ func setupPublisherSignalHandling() (context.Context, context.CancelFunc) {
 
 	go func() {
 		<-sigChan
-		log.Println("Shutdown signal received, stopping publisher...")
+		slog.Info("shutdown signal received, stopping publisher")
 		cancel()
 	}()
 
@@ -68,11 +70,11 @@ func runPublisherLoop(
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Publisher stopped")
+			slog.Info("publisher stopped")
 			return
 		case <-ticker.C:
 			if err := outboxService.ProcessUnpublishedEvents(ctx, batchSize); err != nil {
-				log.Printf("Error processing outbox events: %v", err)
+				slog.Error("error processing outbox events", slog.String("error", err.Error()))
 			}
 		}
 	}
@@ -81,18 +83,24 @@ func runPublisherLoop(
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal("failed to load config:", err)
+		slog.Error("failed to load config", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
+
+	// ログ設定
+	loggerInstance := logger.Setup(cfg.LogLevel)
+	slog.SetDefault(loggerInstance)
 
 	dbPool, err := setupDatabase(cfg)
 	if err != nil {
-		log.Fatal("failed to connect to database:", err)
+		slog.Error("failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
 	defer dbPool.Close()
 
 	redisClient, err := setupPublisherRedisClient(cfg)
 	if err != nil {
-		log.Printf("failed to connect to Redis: %v", err)
+		slog.Error("failed to connect to Redis", slog.String("error", err.Error()))
 		return
 	}
 	defer redisClient.Close()
@@ -103,10 +111,10 @@ func main() {
 	ctx, cancel := setupPublisherSignalHandling()
 	defer cancel()
 
-	log.Printf(
-		"Starting outbox publisher (poll interval: %v, batch size: %d)...",
-		cfg.PublisherPollInterval,
-		cfg.PublisherBatchSize,
+	slog.Info("starting outbox publisher",
+		slog.String("service", "publisher"),
+		slog.Duration("poll_interval", cfg.PublisherPollInterval),
+		slog.Int("batch_size", cfg.PublisherBatchSize),
 	)
 
 	runPublisherLoop(ctx, outboxService, cfg.PublisherPollInterval, cfg.PublisherBatchSize)

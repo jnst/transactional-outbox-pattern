@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/redis/rueidis"
 
@@ -40,19 +40,31 @@ func (s *OutboxServiceImpl) ProcessUnpublishedEvents(ctx context.Context, limit 
 			Build()
 
 		if err := s.redisClient.Do(ctx, cmd).Error(); err != nil {
-			log.Printf("failed to publish event %d to Redis: %v", event.ID, err)
+			slog.Error("failed to publish event to Redis",
+				slog.Int64("event_id", event.ID),
+				slog.String("stream", streamKey),
+				slog.String("error", err.Error()),
+			)
 
 			continue
 		}
 
 		// 発行済みとしてマーク
 		if err := s.outboxRepo.MarkAsPublished(ctx, event.ID); err != nil {
-			log.Printf("failed to mark event %d as published: %v", event.ID, err)
+			slog.Error("failed to mark event as published",
+				slog.Int64("event_id", event.ID),
+				slog.String("error", err.Error()),
+			)
 
 			continue
 		}
 
-		log.Printf("Published event %d to stream %s", event.ID, streamKey)
+		slog.Info("event published successfully",
+			slog.Int64("event_id", event.ID),
+			slog.String("stream", streamKey),
+			slog.String("aggregate_id", event.AggregateID),
+			slog.String("event_type", event.EventType),
+		)
 	}
 
 	return nil

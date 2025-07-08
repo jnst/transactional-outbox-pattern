@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +15,7 @@ import (
 	"github.com/redis/rueidis"
 
 	"github.com/jnst/transactional-outbox-pattern/internal/config"
+	"github.com/jnst/transactional-outbox-pattern/internal/logger"
 	"github.com/jnst/transactional-outbox-pattern/internal/model"
 )
 
@@ -23,6 +24,7 @@ const (
 	redisBlockTimeout   = 1000 // milliseconds
 	errorRetryDelay     = 1 * time.Second
 	signalBufferSize    = 1
+	exitCode            = 1
 )
 
 // MessageHandler processes messages from Redis Streams.
@@ -39,7 +41,12 @@ func NewMessageHandler(redisClient rueidis.Client) *MessageHandler {
 
 // HandleUserCreatedEvent processes user creation events.
 func (h *MessageHandler) HandleUserCreatedEvent(ctx context.Context, event *model.UserCreatedEvent) error {
-	log.Printf("Processing user_created event: ID=%d, Name=%s, Email=%s", event.UserID, event.Name, event.Email)
+	slog.Info("processing user event",
+		slog.String("event_type", "user_created"),
+		slog.Int64("user_id", event.UserID),
+		slog.String("name", event.Name),
+		slog.String("email", event.Email),
+	)
 
 	// ここで外部サービス（メール送信など）を呼び出す
 	// 例: ウェルカムメール送信
@@ -47,20 +54,26 @@ func (h *MessageHandler) HandleUserCreatedEvent(ctx context.Context, event *mode
 		return err
 	}
 
-	log.Printf("Successfully processed user_created event for user %d", event.UserID)
+	slog.Info("user event processed successfully",
+		slog.String("event_type", "user_created"),
+		slog.Int64("user_id", event.UserID),
+	)
 
 	return nil
 }
 
-func (*MessageHandler) sendWelcomeEmail(_ context.Context, name, email any) error {
+func (*MessageHandler) sendWelcomeEmail(_ context.Context, name, email string) error {
 	// TODO: 実際のメール送信ロジックをここに実装
 	// 今回はログ出力のみ
-	log.Printf("Sending welcome email to %s (%s)", name, email)
+	slog.Info("sending welcome email",
+		slog.String("name", name),
+		slog.String("email", email),
+	)
 
 	// メール送信の処理時間をシミュレート
 	time.Sleep(mailProcessingDelay)
 
-	log.Printf("Welcome email sent successfully to %s", email)
+	slog.Info("welcome email sent successfully", slog.String("email", email))
 
 	return nil
 }
@@ -84,7 +97,7 @@ func setupSignalHandling() (context.Context, context.CancelFunc) {
 
 	go func() {
 		<-sigChan
-		log.Println("Shutdown signal received, stopping consumer...")
+		slog.Info("shutdown signal received, stopping consumer")
 		cancel()
 	}()
 
@@ -94,7 +107,7 @@ func setupSignalHandling() (context.Context, context.CancelFunc) {
 func createConsumerGroup(ctx context.Context, redisClient rueidis.Client, streamKey, groupName string) {
 	createGroupCmd := redisClient.B().XgroupCreate().Key(streamKey).Group(groupName).Id("0").Mkstream().Build()
 	if err := redisClient.Do(ctx, createGroupCmd).Error(); err != nil {
-		log.Printf("Consumer group creation result (may already exist): %v", err)
+		slog.Info("consumer group creation result (may already exist)", slog.String("error", err.Error()))
 	}
 }
 
@@ -102,11 +115,11 @@ func runConsumerLoop(ctx context.Context, handler *MessageHandler, streamKey, gr
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Consumer stopped")
+			slog.Info("consumer stopped")
 			return
 		default:
 			if err := handler.consumeMessages(ctx, streamKey, groupName, consumerName); err != nil {
-				log.Printf("Error consuming messages: %v", err)
+				slog.Error("error consuming messages", slog.String("error", err.Error()))
 				time.Sleep(errorRetryDelay)
 			}
 		}
@@ -116,12 +129,18 @@ func runConsumerLoop(ctx context.Context, handler *MessageHandler, streamKey, gr
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal("failed to load config:", err)
+		slog.Error("failed to load config", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
+
+	// ログ設定
+	loggerInstance := logger.Setup(cfg.LogLevel)
+	slog.SetDefault(loggerInstance)
 
 	redisClient, err := setupRedisClient(cfg)
 	if err != nil {
-		log.Fatal("failed to connect to Redis:", err)
+		slog.Error("failed to connect to Redis", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
 	defer redisClient.Close()
 
@@ -135,8 +154,12 @@ func main() {
 
 	createConsumerGroup(ctx, redisClient, streamKey, groupName)
 
-	log.Printf("Starting message consumer (stream: %s, group: %s, consumer: %s)...",
-		streamKey, groupName, consumerName)
+	slog.Info("starting message consumer",
+		slog.String("service", "consumer"),
+		slog.String("stream", streamKey),
+		slog.String("group", groupName),
+		slog.String("consumer", consumerName),
+	)
 
 	runConsumerLoop(ctx, handler, streamKey, groupName, consumerName)
 }
@@ -168,9 +191,12 @@ func (h *MessageHandler) readMessages(
 func (h *MessageHandler) acknowledgeMessage(ctx context.Context, streamKey, groupName, messageID string) {
 	ackCmd := h.redisClient.B().Xack().Key(streamKey).Group(groupName).Id(messageID).Build()
 	if err := h.redisClient.Do(ctx, ackCmd).Error(); err != nil {
-		log.Printf("failed to ACK message %s: %v", messageID, err)
+		slog.Error("failed to ACK message",
+			slog.String("message_id", messageID),
+			slog.String("error", err.Error()),
+		)
 	} else {
-		log.Printf("ACKed message %s", messageID)
+		slog.Debug("ACKed message", slog.String("message_id", messageID))
 	}
 }
 
@@ -181,7 +207,11 @@ func (h *MessageHandler) processStreamMessages(
 ) {
 	for _, message := range messages {
 		if err := h.processMessage(ctx, streamKey, groupName, message); err != nil {
-			log.Printf("failed to process message %s: %v", message.ID, err)
+			slog.Error("failed to process message",
+				slog.String("message_id", message.ID),
+				slog.String("error", err.Error()),
+			)
+
 			continue
 		}
 
@@ -200,7 +230,10 @@ func (h *MessageHandler) consumeMessages(ctx context.Context, streamKey, groupNa
 	}
 
 	for streamName, messages := range streams {
-		log.Printf("Processing stream: %s", streamName)
+		slog.Debug("processing stream",
+			slog.String("stream", streamName),
+			slog.Int("message_count", len(messages)),
+		)
 		h.processStreamMessages(ctx, streamKey, groupName, messages)
 	}
 
@@ -208,7 +241,10 @@ func (h *MessageHandler) consumeMessages(ctx context.Context, streamKey, groupNa
 }
 
 func (h *MessageHandler) processMessage(ctx context.Context, _, _ string, message rueidis.XRangeEntry) error {
-	log.Printf("Received message %s: %v", message.ID, message.FieldValues)
+	slog.Debug("received message",
+		slog.String("message_id", message.ID),
+		slog.Any("fields", message.FieldValues),
+	)
 
 	// イベントタイプを取得
 	eventType, ok := message.FieldValues["event_type"]
@@ -232,7 +268,7 @@ func (h *MessageHandler) processMessage(ctx context.Context, _, _ string, messag
 
 		return h.HandleUserCreatedEvent(ctx, &event)
 	default:
-		log.Printf("Unknown event type: %s", eventType)
+		slog.Warn("unknown event type", slog.String("event_type", eventType))
 		return nil // 未知のイベントタイプは無視
 	}
 }

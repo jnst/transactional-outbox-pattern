@@ -4,13 +4,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jnst/transactional-outbox-pattern/internal/config"
+	"github.com/jnst/transactional-outbox-pattern/internal/logger"
 	"github.com/jnst/transactional-outbox-pattern/internal/model"
 	"github.com/jnst/transactional-outbox-pattern/internal/repository"
 	"github.com/jnst/transactional-outbox-pattern/internal/service"
@@ -23,6 +25,7 @@ const (
 	decimalBase            = 10
 	int64BitSize           = 64
 	signalBufferSize       = 1
+	exitCode               = 1
 )
 
 // APIServer handles HTTP requests for user management.
@@ -111,15 +114,21 @@ func main() {
 	// 環境変数読み込み
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal("failed to load config:", err)
+		slog.Error("failed to load config", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
+
+	// ログ設定
+	loggerInstance := logger.Setup(cfg.LogLevel)
+	slog.SetDefault(loggerInstance)
 
 	// データベース接続
 	dbURL := cfg.DatabaseURL
 
 	dbPool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		log.Fatal("failed to connect to database:", err)
+		slog.Error("failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(exitCode)
 	}
 	defer dbPool.Close()
 
@@ -140,10 +149,10 @@ func main() {
 	// サーバー起動
 	port := cfg.Port
 
-	log.Printf("Starting API server on port %s", port)
+	slog.Info("starting API server", slog.String("service", "api"), slog.String("port", port))
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Printf("failed to start server: %v", err)
+		slog.Error("failed to start server", slog.String("error", err.Error()))
 		return
 	}
 }
