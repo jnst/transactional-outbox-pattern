@@ -1,4 +1,4 @@
-# Transactional Outbox Pattern with Go, PostgreSQL, and Redis
+# Transactional Outbox Pattern
 
 このプロジェクトは、Go、PostgreSQL、Redis Streamsを使用したトランザクションアウトボックスパターンの実装サンプルです。
 
@@ -6,7 +6,7 @@
 
 ## 技術スタック
 
-- **Go 1.21+**: アプリケーションロジック
+- **Go 1.23+**: アプリケーションロジック
 - **PostgreSQL**: メインデータベース + アウトボックステーブル
 - **Redis Streams**: メッセージング・イベント配信
 - **rueidis v1.0.62**: 高性能Redis Goクライアント
@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_aggregate_id ON outbox_events (aggregate_i
 ## セットアップ
 
 ### 前提条件
-- Go 1.21+
+- Go 1.23+
 - Docker & Docker Compose
 - PostgreSQL (Dockerで提供)
 - Redis (Dockerで提供)
