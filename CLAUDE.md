@@ -29,6 +29,7 @@ Key architectural principles:
 - `internal/service/` - Business logic layer
 - `internal/db/` - Generated sqlc code for type-safe SQL operations
 - `internal/config/` - Environment configuration management
+- `internal/logger/` - Structured logging setup with slog
 - `db/migrations/` - Database schema migrations
 - `db/queries/` - SQL queries for sqlc generation
 - `db/sqlc.yaml` - sqlc configuration file
@@ -84,6 +85,7 @@ Environment variables managed via `caarlos0/env/v11` with struct-based configura
 - `PUBLISHER_POLL_INTERVAL` - Polling frequency (default: 5s)
 - `PUBLISHER_BATCH_SIZE` - Events per batch (default: 10)
 - `CONSUMER_NAME` - Consumer identifier (default: consumer-1)
+- `LOG_LEVEL` - Logging level (default: info)
 
 Configuration struct in `internal/config/config.go` uses `envDefault` tags for defaults.
 
@@ -124,6 +126,14 @@ The `published_at` column tracks publication status - NULL means unpublished.
 - Publisher marks events as published by setting `published_at` timestamp
 - Consumer uses `email-service` group for distributed processing
 - Stream commands: XADD (publish), XREADGROUP (consume), XACK (acknowledge)
+
+### Logging
+- Uses Go's structured logging (slog) with text format for human-readable output
+- Centralized logger setup in `internal/logger/` package
+- Type-safe field functions: `slog.String()`, `slog.Int64()`, `slog.Duration()`, etc.
+- Log levels: debug, info, warn, error (configured via `LOG_LEVEL` environment variable)
+- Structured fields include: event_id, user_id, stream, service, error, message_id
+- All services (api, publisher, consumer) use consistent logging patterns
 
 ## Testing API
 
