@@ -1,0 +1,83 @@
+version: "2"
+
+run:
+  timeout: 10s
+
+linters:
+  default: fast
+  enable:
+    - errcheck
+    - goconst
+    - gocritic
+    - govet
+    - nlreturn
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  disable:
+    - depguard
+    - godox
+    - lll
+    - wsl
+    - wsl_v5
+
+  settings:
+    gocritic:
+      enable-all: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    nlreturn:
+      block-size: 2
+
+    staticcheck:
+      checks:
+        - all
+
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: line-length-limit
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - errcheck
+          - gosec
+          - dupl
+      - path: 'internal/db/'
+        linters:
+          - revive
+
+    generated: strict
+
+formatters:
+  enable:
+    - gofmt
+    - golines
+    - gci
+  settings:
+    golines:
+      max-len: 120
+      tab-len: 4
+      shorten-comments: true
+      reformat-tags: false
+      chain-split-dots: true
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/jnst/transactional-outbox-pattern)
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true

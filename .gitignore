@@ -1,0 +1,5 @@
+# Binaries
+/bin/*
+!/bin/.gitkeep
+
+settings.local.json

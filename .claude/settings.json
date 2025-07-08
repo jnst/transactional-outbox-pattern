@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go mod tidy)",
+      "Bash(make fmt)",
+      "Bash(make gen)",
+      "Bash(make lint)",
+      "Bash(grep:*)"
+    ],
+    "deny": [
+      "Write(.golangci.yml)"
+    ]
+  }
+}
